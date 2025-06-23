@@ -1,0 +1,16 @@
+# Ignore dependencies
+**/node_modules/
+
+# Ignore environment variables
+**/.env
+
+# Ignore logs
+*.log
+
+# Build output
+dist/
+build/
+
+# Editor & system files
+.vscode/
+.DS_Store

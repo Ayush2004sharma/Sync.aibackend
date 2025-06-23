@@ -12,6 +12,11 @@ import { generateProjectName } from '../services/gemini.service.js';
 
 import { generateProjectCodeStructure } from '../services/gemini.service.js';
 import Project from '../models/project.model.js';
+import { getLatestFileVersion } from '../services/project.service.js';
+
+import { getUserMessages } from '../services/project.service.js';
+
+import { saveUserMessage } from '../services/project.service.js';
 
 export const createProject= async(req, res)=>{
   const errors = validationResult(req);
@@ -351,5 +356,54 @@ export const generateProjectCode = async (req, res) => {
   } catch (err) {
     console.error('Error generating project code:', err);
     res.status(500).json({ error: 'Failed to generate code' });
+  }
+};
+
+
+//latest file controller 
+
+// controllers/project.controller.js
+
+
+
+export const getLatestVersionController = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const latestVersion = await getLatestFileVersion(projectId);
+
+    res.status(200).json(latestVersion);
+  } catch (error) {
+    console.error("Error fetching latest file version:", error.message);
+    res.status(404).json({ error: error.message });
+  }
+};
+
+
+export const fetchUserMessages = async (req, res) => {
+  try {
+    const projectId = req.params.projectId; // <-- make sure this line exists
+    const messages = await getUserMessages(projectId);
+    res.status(200).json({ messages });
+  } catch (err) {
+    console.error('Error fetching messages:', err.message);
+    res.status(500).json({ error: 'Failed to fetch user messages' });
+  }
+};
+
+
+export const createUserMessage = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const {  message, sender } = req.body;
+
+    const updatedProject = await saveUserMessage(projectId, { sender, message });
+
+    res.status(200).json({
+      message: 'Message saved successfully',
+      data: updatedProject.userMessages.at(-1), // send the latest message
+    });
+  } catch (err) {
+    console.error('Error saving user message:', err.message);
+    res.status(500).json({ error: 'Failed to save user message' });
   }
 };

@@ -1,153 +1,73 @@
-import projectModel from "../models/project.model.js";
-import { generateGeminiResponse } from "./gemini.service.js";
+import http from 'http';
+import dotenv from 'dotenv';
+import app from './app.js';
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import projectModel from './models/project.model.js';
 
+dotenv.config();
 
-import mongoose from "mongoose";
+const port = process.env.PORT || 3000;
+const server = http.createServer(app);
 
-export const createProject = async ({ name, userId }) => {
-  if (!name) {
-    throw new Error("Project name is required");
-  }
-  if (!userId) {
-    throw new Error("User ID is required");
-  }
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  },
+});
 
+io.use(async (socket, next) => {
   try {
-    const project = await projectModel.create({
-      name,
-      users: [userId],
-    });
-    return project; // ✅ return inside the try block
-  } catch (error) {
-    if (error.code === 11000) {
-      throw new Error("Project name already exists");
+    const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
+    const projectId = socket.handshake.query.projectId;
+
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      return next(new Error('Invalid or missing project ID'));
     }
-    throw error;
-  }
-};
 
-
-export const getAllProjectsByUserId = async({userId})=>{
-  if(!userId){
-    throw new Error('User ID is required');
-  }
-
-  const allUserProjects = await projectModel.find({
-    users: userId,
-  })
-
-  return allUserProjects;
-}
-
-export const addUserToProject = async({projectId, users, userId})=>{
-  if(!projectId){
-    throw new Error('Project ID is required');
-  }
-
-  if(!mongoose.Types.ObjectId.isValid(projectId)){
-    throw new Error('Invalid Project ID');
-  }
-  if(!users){
-    throw new Error('users are required ');
-  }
-  if(!Array.isArray(users)||users.some(userId=>!mongoose.Types.ObjectId.isValid(userId))){
-    throw new Error('Invalid users array');
-  }
-  if(!userId){
-    throw new Error('User ID is required');
-  }
-
-  const project= await projectModel.findOne({
-    _id: projectId,
-    users: userId
-  });
-
-  if(!project){
-    throw new Error('Project not found or user not authorized');
-  }
-  const updatedProject = await projectModel.findOneAndUpdate({
-    _id: projectId,
-
-  },{
-    $addToSet:{
-      users: {
-        $each: users
-      }
+    const project = await projectModel.findById(projectId);
+    if (!project) {
+      return next(new Error('Project not found'));
     }
-  },{
-    new: true,
-  })
 
-  return updatedProject;
-}
+    socket.project = project;
 
-export const getProjectById = async({projectId})=>{
-  if(!projectId){
-    throw new Error('Project ID is required');
+    if (!token) {
+      return next(new Error('Authentication error - token missing'));
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded) {
+      return next(new Error('Authentication error - token invalid'));
+    }
+
+    socket.user = decoded;
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+io.on('connection', socket => {
+  if (!socket.project || !socket.project._id) {
+    console.error('socket.project is null or invalid — disconnecting...');
+    socket.disconnect(true);
+    return;
   }
 
-  if(!mongoose.Types.ObjectId.isValid(projectId)){
-    throw new Error('Invalid Project ID');
-  }
+  socket.roomId = socket.project._id.toString();
+  socket.join(socket.roomId);
 
-  const project= await projectModel.findOne({
-    _id: projectId,
-  }).populate('users');
-  
-  return project;
-}
-
-/**
- * Adds a user message to a project, calls AI for response,
- * appends AI reply, then saves and returns updated messages.
- * 
- * @param {Object} params
- * @param {string} params.projectId - ID of the project
- * @param {string} params.userMessage - User's chat message
- * @returns {Array} Updated array of all messages in the project
- */
-export const addMessageToProject = async ({ projectId, userMessage }) => {
-  // Find the project by ID
-  const project = await projectModel.findById(projectId);
-  if (!project) throw new Error('Project not found');
-
-  if (!project.users.includes(loggedInUser._id)) {
-  throw new Error('Not authorized to access this project');
-}
-
-  // Add user message to messages array
-  project.messages.push({
-    role: 'user',
-    content: userMessage,
-    timestamp: new Date(),
+  socket.on('project-message', data => {
+    socket.broadcast.to(socket.roomId).emit('project-message', data);
   });
 
-  // Generate AI reply using Gemini API
-  const aiReply = await generateGeminiResponse(userMessage);
-
-  // Add AI message to messages array
-  project.messages.push({
-    role: 'assistant',
-    content: aiReply,
-    timestamp: new Date(),
+  socket.on('disconnect', reason => {
+    socket.leave(socket.roomId);
   });
+});
 
-  // Save updated project with new messages
-  await project.save();
-
-  // Return all messages so frontend can update chat view
-  return project.messages;
-};
-
-/**
- * Fetches all messages of a project by ID
- * 
- * @param {string} projectId - ID of the project
- * @returns {Array} Array of message objects
- */
-export const getMessagesByProjectId = async (projectId) => {
-  const project = await projectModel.findById(projectId);
-  if (!project) throw new Error('Project not found');
-
-  return project.messages;
-};
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});

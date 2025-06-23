@@ -57,16 +57,13 @@ io.on('connection', socket => {
   }
 
   socket.roomId = socket.project._id.toString();
-  console.log('New client connected to room:', socket.roomId);
   socket.join(socket.roomId);
 
   socket.on('project-message', data => {
-    console.log('Message received:', data);
     socket.broadcast.to(socket.roomId).emit('project-message', data);
   });
 
   socket.on('disconnect', reason => {
-    console.log(`Client disconnected from room ${socket.roomId}. Reason: ${reason}`);
     socket.leave(socket.roomId);
   });
 });

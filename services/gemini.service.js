@@ -4,6 +4,8 @@ import removeMarkdown from "remove-markdown";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+import Project from '../models/project.model.js'; // adjust path if needed
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 
@@ -30,9 +32,6 @@ export const generateGeminiResponse = async (message) => {
 
 
 export const generateProjectName = async (message) => {
- const prompt = `Provide exactly one concise, unique project name based on this message. Return only the name without quotes, punctuation, or any extra text.\nMessage:\n"${message}"\nProject name:`;
-
-
   const model = genAI.getGenerativeModel({
     model: "gemini-2.0-flash",
     generationConfig: {
@@ -41,18 +40,25 @@ export const generateProjectName = async (message) => {
     },
   });
 
+  const prompt = `Provide exactly one concise project name based on this message. Return only the name without quotes, punctuation, or any extra text.\nMessage:\n"${message}"\nProject name:`;
+
   const result = await model.generateContent(prompt);
   const rawText = await result.response.text();
 
-  let cleanName = removeMarkdown(rawText).trim();
+  let baseName = removeMarkdown(rawText).trim();
+  baseName = baseName.replace(/[:.!,]+$/g, "");
+  baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
 
-  // Remove trailing punctuation if needed
-  cleanName = cleanName.replace(/[:.!,]+$/g, "");
+  let finalName = baseName;
+  let count = 1;
 
-  // Capitalize first letter
-  cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+  // Check if project with this name exists
+  while (await Project.findOne({ name: finalName })) {
+    finalName = `${baseName} (${count})`;
+    count++;
+  }
 
-  return cleanName;
+  return finalName;
 };
 
 
